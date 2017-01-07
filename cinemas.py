@@ -24,10 +24,14 @@ def parse_afisha_list(raw_html):
     return movie_list
 
 
-def fetch_movie_info(movie_title):
+def fetch_movie_search_page(movie_title):
     params = {'text': movie_title}
     response = requests.get('https://plus.kinopoisk.ru/search/films/', params=params)
-    soup = BeautifulSoup(response.content, 'html.parser')
+    return response.content
+
+
+def parse_movie_search_page(raw_html, movie_title):
+    soup = BeautifulSoup(raw_html, 'html.parser')
     movie = soup.find(attrs={'content': movie_title})
 
     if not movie:
@@ -36,6 +40,13 @@ def fetch_movie_info(movie_title):
     movie = movie.parent
     movie_url = movie.find('a', attrs={'itemprop': 'url'})
     movie_url = movie_url['href']
+    return movie_url
+
+
+def fetch_movie_info(movie_url):
+    if not movie_url:
+        return
+
     movie_page = requests.get(movie_url)
     return movie_page.content
 
@@ -57,15 +68,17 @@ def output_movies_to_console(movies, top):
         print('Идёт в {0} кинотеатрах'.format(movie['cinemas_count']))
 
 
-SORT_KEYS = {
-    'rating': lambda x: x.get('rating'),
-    'cinema': lambda x: x.get('cinemas_count')
-}
+def sort_by_rating(movie):
+    return movie.get('rating')
+
+
+def sort_by_cinemas(movie):
+    return movie.get('cinemas_count')
 
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Узнай что в кино!')
-    parser.add_argument('-c', action='store_const', const='cinema', default='rating', dest='sort_key',
+    parser.add_argument('-c', action='store_const', const=sort_by_cinemas, default=sort_by_rating, dest='sort_key',
                         help='Сортировка по количеству кинотеатров, показывающих фильм')
     parser.add_argument('-t', '--top', type=int, nargs='?', default=10,
                         help='Размер результирующего списка')
@@ -76,9 +89,10 @@ if __name__ == '__main__':
 
     for count, movie in enumerate(movie_list):
         print('Обрабатываю фильмы с афиши {0}/{1}...'.format(count + 1, len(movie_list)), end='\r')
-        raw_movie_page = fetch_movie_info(movie.get('title'))
-        movie['rating'], movie['voters'] = parse_movie_info(raw_movie_page)
+        raw_movie_search_page = fetch_movie_search_page(movie.get('title'))
+        movie_url = parse_movie_search_page(raw_movie_search_page, movie.get('title'))
+        raw_movie_info = fetch_movie_info(movie_url)
+        movie['rating'], movie['voters'] = parse_movie_info(raw_movie_info)
 
-    sort_key = SORT_KEYS[options.sort_key]
-    sorted_movie_list = sorted(movie_list, key=sort_key)
+    sorted_movie_list = sorted(movie_list, key=options.sort_key)
     output_movies_to_console(movie_list, options.top)
